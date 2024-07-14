@@ -1,0 +1,198 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Dashboard Cow Monitoring</title>
+    <!-- Include Leaflet CSS -->
+    <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css" />
+    <!-- Include Leaflet JavaScript -->
+    <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
+    <!-- Include Leaflet Routing Machine CSS -->
+    <link rel="stylesheet" href="https://unpkg.com/leaflet-routing-machine/dist/leaflet-routing-machine.css" />
+    <!-- Include Leaflet Routing Machine JavaScript -->
+    <script src="https://unpkg.com/leaflet-routing-machine/dist/leaflet-routing-machine.js"></script>
+    <!-- Include Firebase JavaScript -->
+    <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-app.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-database.js"></script>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        #map {
+            height: 400px;
+            width: 100%;
+        }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 20px;
+        }
+        table, th, td {
+            border: 1px solid black;
+        }
+        th, td {
+            padding: 8px;
+            text-align: left;
+        }
+        #routeButton {
+            margin: 20px 0;
+            padding: 10px 20px;
+            background-color: #4CAF50;
+            color: white;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+        }
+        #routeButton:hover {
+            background-color: #45a049;
+        }
+        @media (max-width: 600px) {
+            h1 {
+                font-size: 24px;
+                text-align: center;
+            }
+            #map {
+                height: 300px;
+            }
+            th, td {
+                padding: 4px;
+                font-size: 14px;
+            }
+            table {
+                margin-top: 10px;
+            }
+            p {
+                font-size: 14px;
+            }
+        }
+    </style>
+</head>
+<body>
+    <h1>Dashboard Pemantauan Kawanan Sapi</h1>
+    <div id="map"></div>
+    <p><strong>Lokasi:</strong> <span id="address"></span></p>
+    <p><strong>Jumlah sapi terdeteksi:</strong> <span id="cowCount"></span></p>
+    <button id="routeButton">Lihat rute</button>
+    <table>
+        <thead>
+            <tr>
+                <th>ID Sapi</th>
+                <th>RSSI</th>
+                <th>Akselerasi</th>
+                <th>Perubahan Rotasi</th>
+            </tr>
+        </thead>
+        <tbody id="cowTableBody">
+        </tbody>
+    </table>
+
+    <script>
+        // Firebase configuration
+        const firebaseConfig = {
+            apiKey: "AIzaSyB5iWJdMm9ZoNG_W5y9GRRx5N5bjk1CjR8",
+            authDomain: "pemantau-sapi.firebaseapp.com",
+            databaseURL: "https://pemantau-sapi-default-rtdb.asia-southeast1.firebasedatabase.app",
+            projectId: "pemantau-sapi",
+            storageBucket: "pemantau-sapi.appspot.com",
+            messagingSenderId: "563280787019",
+            appId: "1:563280787019:web:92fe8b148d66fb99977fce"
+        };
+
+        // Initialize Firebase
+        firebase.initializeApp(firebaseConfig);
+        const database = firebase.database();
+
+        let map;
+        let marker;
+        let routingControl;
+        let cowLatLng;
+
+        function initMap() {
+            map = L.map('map').setView([-6.2088, 106.8456], 13); // Set initial map center and zoom level
+
+            // Add OpenStreetMap tile layer to the map
+            L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+                maxZoom: 19,
+                attribution: 'Map data &copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+            }).addTo(map);
+
+            marker = L.marker([-6.2088, 106.8456]).addTo(map);
+
+            // Initialize routing control
+            routingControl = L.Routing.control({
+                waypoints: [],
+                routeWhileDragging: true,
+                geocoder: L.Control.Geocoder.nominatim(),
+                createMarker: () => null // Prevent default markers from being created
+            }).addTo(map);
+        }
+
+        function fetchData() {
+            const dataRef = database.ref('path/to/your/data'); // Adjust the path to your data in Firebase
+
+            dataRef.once('value', (snapshot) => {
+                const data = snapshot.val();
+                const { address, cowCount, cows, location } = data;
+                document.getElementById('address').innerText = address;
+                document.getElementById('cowCount').innerText = cowCount;
+
+                // Update marker position on the map
+                if (location.lat !== 0 && location.lng !== 0) {
+                    marker.setLatLng([location.lat, location.lng]);
+                    map.setView([location.lat, location.lng], 13);
+
+                    // Store cow location
+                    cowLatLng = L.latLng(location.lat, location.lng);
+                }
+
+                // Update cow table
+                const cowTableBody = document.getElementById('cowTableBody');
+                cowTableBody.innerHTML = '';
+                cows.forEach(cow => {
+                    const row = document.createElement('tr');
+                    const idCell = document.createElement('td');
+                    const rssiCell = document.createElement('td');
+                    const accelCell = document.createElement('td');
+                    const gyroCell = document.createElement('td');
+                    idCell.innerText = cow.id;
+                    rssiCell.innerText = cow.rssi;
+                    accelCell.innerText = cow.acceleration;
+                    gyroCell.innerText = cow.rotation;
+                    row.appendChild(idCell);
+                    row.appendChild(rssiCell);
+                    row.appendChild(accelCell);
+                    row.appendChild(gyroCell);
+                    cowTableBody.appendChild(row);
+                });
+            });
+        }
+
+        function showRoute() {
+            if (navigator.geolocation) {
+                navigator.geolocation.getCurrentPosition(position => {
+                    const userLatLng = L.latLng(position.coords.latitude, position.coords.longitude);
+
+                    if (cowLatLng) {
+                        routingControl.setWaypoints([userLatLng, cowLatLng]);
+                    } else {
+                        alert('Cow location not available yet.');
+                    }
+                });
+            } else {
+                alert('Geolocation is not supported by this browser.');
+            }
+        }
+
+        window.onload = () => {
+            initMap();
+            setInterval(fetchData, 5000); // Refresh data every 5 seconds
+
+            document.getElementById('routeButton').addEventListener('click', showRoute);
+        };
+    </script>
+</body>
+</html>
